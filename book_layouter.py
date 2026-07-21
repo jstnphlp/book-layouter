@@ -41,10 +41,14 @@ def mm_to_pt(mm: float) -> float:
     return mm * MM_TO_PT
 
 
-def get_page_dimensions(page: PageObject) -> tuple[float, float]:
-    """Get the visible width and height of a page in points."""
+def get_page_dimensions(page: PageObject) -> tuple[float, float, float, float]:
+    """Get the visible width, height, and mediabox origin of a page in points.
+
+    Returns (width, height, origin_x, origin_y).
+    Origin is (mb.left, mb.bottom) — non-zero for cropped/trimmed PDFs.
+    """
     mb = page.mediabox
-    return float(mb.width), float(mb.height)
+    return float(mb.width), float(mb.height), float(mb.left), float(mb.bottom)
 
 
 def estimate_spine_mm(total_pages: int, caliper: float = CALIPER_MM_PER_LEAF) -> float:
@@ -108,21 +112,22 @@ def create_output_page(
     # Merge left page
     # slot_w already reserves the spine gutter, so centering happens
     # within the remaining content width, not the full half-page width.
+    # Subtract mediabox origin so the transform is relative to the page's
+    # actual visible origin, not an assumed (0,0).
     if left_page is not None:
-        lw, lh = get_page_dimensions(left_page)
+        lw, lh, lox, loy = get_page_dimensions(left_page)
         scale = min(slot_w / lw, slot_h / lh)
-        # Center both vertically and horizontally within the slot
-        ty = slot_y + (slot_h - lh * scale) / 2
-        tx = left_x + (slot_w - lw * scale) / 2
+        ty = slot_y + (slot_h - lh * scale) / 2 - loy * scale
+        tx = left_x + (slot_w - lw * scale) / 2 - lox * scale
         ctm = Transformation(ctm=(scale, 0, 0, scale, tx, ty))
         output.merge_transformed_page(left_page, ctm=ctm)
 
     # Merge right page
     if right_page is not None:
-        rw, rh = get_page_dimensions(right_page)
+        rw, rh, rox, roy = get_page_dimensions(right_page)
         scale = min(slot_w / rw, slot_h / rh)
-        ty = slot_y + (slot_h - rh * scale) / 2
-        tx = right_x + (slot_w - rw * scale) / 2
+        ty = slot_y + (slot_h - rh * scale) / 2 - roy * scale
+        tx = right_x + (slot_w - rw * scale) / 2 - rox * scale
         ctm = Transformation(ctm=(scale, 0, 0, scale, tx, ty))
         output.merge_transformed_page(right_page, ctm=ctm)
 
@@ -230,8 +235,18 @@ def run_layout(
 
     if verbose:
         print(f"Pages: {total_input}  |  Spine estimate: {spine_mm:.2f} mm")
-        print(f"{'Sheet':>5}  {'FL':>4}  {'FR':>4}  {'BL':>4}  {'BR':>4}")
-        print(f"{'-----':>5}  {'----':>4}  {'----':>4}  {'----':>4}  {'----':>4}")
+        print()
+        print(f"  {'Page':>4}  {'W':>6}  {'H':>6}  {'Left':>6}  {'Bot':>6}")
+        print(f"  {'----':>4}  {'------':>6}  {'------':>6}  {'------':>6}  {'------':>6}")
+        for pg_idx, pg in enumerate(pages):
+            pw, ph, px, py = get_page_dimensions(pg)
+            origin_flag = "" if px == 0 and py == 0 else "  *"
+            print(f"  {pg_idx + 1:>4}  {pw:>6.1f}  {ph:>6.1f}  {px:>6.1f}  {py:>6.1f}{origin_flag}")
+        if any(get_page_dimensions(p)[2] != 0 or get_page_dimensions(p)[3] != 0 for p in pages):
+            print("  (* = non-zero mediabox origin)")
+        print()
+        print(f"  {'Sheet':>5}  {'FL':>4}  {'FR':>4}  {'BL':>4}  {'BR':>4}")
+        print(f"  {'-----':>5}  {'----':>4}  {'----':>4}  {'----':>4}  {'----':>4}")
 
     sheets = compute_imposition(total_input)
 
