@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """Book Layouter — Perfect binding 2-up imposition for A4 landscape.
 
-Takes a PDF ebook and produces a print-ready PDF arranged for perfect binding.
-Each landscape A4 sheet holds 2 ebook pages side-by-side. Back-left/right are
-swapped so that after a manual long-edge flip, each leaf carries consecutive
-pages. A dashed center guideline is included for cutting.
+Global half-offset imposition for manual-duplex printers.
+
+Takes a PDF ebook and produces a print-ready PDF where each landscape A4
+sheet holds 2 ebook pages side-by-side.  Back-left/right are swapped to
+correct for a manual flip that mirrors left-right.
+
+Workflow:
+    1. Convert → produces laid-out PDF (auto-split into _fronts and _backs)
+    2. Print _fronts, reload paper, print _backs
+    3. Cut the ENTIRE stack at once vertically along the dashed guideline
+    4. Left halves = Pile A (pages 1..half), right halves = Pile B (half+1..N)
+    5. Stack Pile A then Pile B, perfect bind — pages read 1,2,3,…N
 
 Spine width is estimated from page count and paper weight (default 50gsm).
 """
@@ -58,22 +66,21 @@ def _page_slot_positions(out_width: float, out_height: float,
 
     Each page spans from its edge to the absolute center.
     The spine_offset shrinks the usable content width (glue eats
-    into the binding edge).  Content is centered in the remaining space.
+    into the binding edge).  Content is centered within each half.
 
-    Left page:                           Right page:
-        ┌─margin─┬spine─┬─content──┬───┐ ┌───┬──content─┬spine─┬margin─┐
-        │        │ glue │ centered │   │ │   │ centered │ glue │       │
-    margin                          center                            out_w-margin
+    Left page:                            Right page:
+        ┌─margin─┬spine┬──content──┬─────┐ ┌─────┬──content─┬spine─┬margin─┐
+        │        │glue │  centered │     │ │     │ centered │ glue │       │
+    margin                           center                             out_w-margin
     """
     center = out_width / 2
     half_width = center - margin
     content_width = half_width - spine_offset
     slot_height = out_height - 2 * margin
 
-    # Each page spans from edge to center.  Content is centered within that
-    # half after reserving spine_offset at the binding edge.
-    left_x = margin + spine_offset / 2       # centered in left half
-    right_x = center + spine_offset / 2      # centered in right half
+    # Content is centered in each half: same outer margin and same inner gap.
+    left_x = margin + spine_offset / 2     # centered in left half
+    right_x = center + spine_offset / 2    # centered in right half
     slot_y = margin
 
     return content_width, slot_height, left_x, right_x, slot_y
@@ -150,8 +157,8 @@ def compute_imposition(total_pages: int) -> list[dict[str, int | None]]:
         half        = npad / 2
         front-left  = 2i + 1
         front-right = half + 2i + 1
-        back-left   = 2i + 2
-        back-right  = half + 2i + 2
+        back-left   = half + 2i + 2   (swapped — manual flip mirrors L/R)
+        back-right  = 2i + 2          (swapped — manual flip mirrors L/R)
 
     After cutting the entire stack at once, left halves form Pile A
     (pages 1..half, already in order) and right halves form Pile B
@@ -166,8 +173,8 @@ def compute_imposition(total_pages: int) -> list[dict[str, int | None]]:
     for i in range(num_sheets):
         fl = 2 * i              # front-left  (0-based)
         fr = half + 2 * i       # front-right
-        bl = 2 * i + 1          # back-left
-        br = half + 2 * i + 1   # back-right
+        bl = half + 2 * i + 1   # back-left   (swapped)
+        br = 2 * i + 1          # back-right  (swapped)
 
         sheets.append({
             "front_left":   fl if fl < total_pages else None,
@@ -224,7 +231,7 @@ def run_layout(
 
     sheets = compute_imposition(total_input)
 
-    for sheet in sheets:
+    for sheet_idx, sheet in enumerate(sheets):
         def _page(idx: int | None) -> PageObject | None:
             return pages[idx] if idx is not None else None
 
@@ -236,7 +243,7 @@ def run_layout(
         if verbose:
             def _fmt(idx: int | None) -> str:
                 return str(idx + 1) if idx is not None else "--"
-            print(f"  {total_output // 2:>5}  {_fmt(fl_idx):>4}  {_fmt(fr_idx):>4}  "
+            print(f"  {sheet_idx:>5}  {_fmt(fl_idx):>4}  {_fmt(fr_idx):>4}  "
                   f"{_fmt(bl_idx):>4}  {_fmt(br_idx):>4}")
 
         # Front side
