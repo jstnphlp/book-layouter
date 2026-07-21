@@ -27,6 +27,7 @@ from pypdf.generic import DecodedStreamObject
 
 # Constants
 MM_TO_PT = 2.834645669
+RIGHT_PAGE_LEFT_PAD_MM = 2   # extra padding on the left (cut) side of the right page
 A4_WIDTH_MM = 297
 A4_HEIGHT_MM = 210
 DEFAULT_MARGIN_MM = 10
@@ -116,18 +117,20 @@ def create_output_page(
     # actual visible origin, not an assumed (0,0).
     if left_page is not None:
         lw, lh, lox, loy = get_page_dimensions(left_page)
-        scale = min(slot_w / lw, slot_h / lh)
+        scale = min(slot_w / lw, slot_h / lh)  # fit-to-fill, preserving aspect ratio
         ty = slot_y + (slot_h - lh * scale) / 2 - loy * scale
         tx = left_x + (slot_w - lw * scale) / 2 - lox * scale
         ctm = Transformation(ctm=(scale, 0, 0, scale, tx, ty))
         output.merge_transformed_page(left_page, ctm=ctm)
 
     # Merge right page
+    # Extra left-side padding shifts content away from the cut line.
+    right_pad = mm_to_pt(RIGHT_PAGE_LEFT_PAD_MM)
     if right_page is not None:
         rw, rh, rox, roy = get_page_dimensions(right_page)
         scale = min(slot_w / rw, slot_h / rh)
         ty = slot_y + (slot_h - rh * scale) / 2 - roy * scale
-        tx = right_x + (slot_w - rw * scale) / 2 - rox * scale
+        tx = right_x + (slot_w - rw * scale) / 2 - rox * scale + right_pad
         ctm = Transformation(ctm=(scale, 0, 0, scale, tx, ty))
         output.merge_transformed_page(right_page, ctm=ctm)
 
