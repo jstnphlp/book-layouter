@@ -106,12 +106,15 @@ def create_output_page(
     output = PageObject.create_blank_page(width=out_width, height=out_height)
 
     # Merge left page
+    # slot_w already reserves the spine gutter, so centering happens
+    # within the remaining content width, not the full half-page width.
     if left_page is not None:
         lw, lh = get_page_dimensions(left_page)
         scale = min(slot_w / lw, slot_h / lh)
-        # Center vertically within the slot
+        # Center both vertically and horizontally within the slot
         ty = slot_y + (slot_h - lh * scale) / 2
-        ctm = Transformation(ctm=(scale, 0, 0, scale, left_x, ty))
+        tx = left_x + (slot_w - lw * scale) / 2
+        ctm = Transformation(ctm=(scale, 0, 0, scale, tx, ty))
         output.merge_transformed_page(left_page, ctm=ctm)
 
     # Merge right page
@@ -119,7 +122,8 @@ def create_output_page(
         rw, rh = get_page_dimensions(right_page)
         scale = min(slot_w / rw, slot_h / rh)
         ty = slot_y + (slot_h - rh * scale) / 2
-        ctm = Transformation(ctm=(scale, 0, 0, scale, right_x, ty))
+        tx = right_x + (slot_w - rw * scale) / 2
+        ctm = Transformation(ctm=(scale, 0, 0, scale, tx, ty))
         output.merge_transformed_page(right_page, ctm=ctm)
 
     # Add center guideline (absolute center — same position front and back)
